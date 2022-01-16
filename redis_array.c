@@ -1113,6 +1113,57 @@ PHP_METHOD(RedisArray, unlink) {
     ra_generic_del(INTERNAL_FUNCTION_PARAM_PASSTHRU, "UNLINK", sizeof("UNLINK") - 1);
 }
 
+PHP_METHOD(RedisArray, scan)
+{
+    RedisArray *ra;
+    zend_string *pattern = NULL;
+    zval *object, *z_iter, *zv, z_fun, z_args[3];
+    zend_long i, count = 0;
+
+    if (zend_parse_method_parameters(ZEND_NUM_ARGS(), getThis(), "Oz/|S!l",
+            &object, redis_array_ce, &z_iter, &pattern, &count) == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    if ((ra = redis_array_get(object)) == NULL) {
+        RETURN_FALSE;
+    }
+
+    if (Z_TYPE_P(z_iter) != IS_ARRAY) {
+        RETURN_FALSE;
+    } else if (zend_hash_num_elements(Z_ARRVAL_P(z_iter)) == 0) {
+        add_index_long(z_iter, 0, 0);
+        add_index_null(z_iter, 1);
+    }
+
+    zv = zend_hash_index_find(Z_ARRVAL_P(z_iter), 0);
+    if ((i = Z_LVAL_P(zv)) < 0 || i >= ra->count) {
+        RETURN_FALSE;
+    }
+
+    zv = zend_hash_index_find(Z_ARRVAL_P(z_iter), 1);
+
+    ZVAL_NEW_REF(&z_args[0], zv);
+    if (pattern) ZVAL_STR(&z_args[1], pattern);
+    ZVAL_LONG(&z_args[2], count);
+
+    ZVAL_STRING(&z_fun, "SCAN");
+    call_user_function(&redis_ce->function_table, &ra->redis[i], &z_fun, return_value, ZEND_NUM_ARGS(), z_args);
+    zval_dtor(&z_fun);
+
+    if (Z_TYPE_P(return_value) == IS_ARRAY) {
+        ZVAL_ZVAL(zv, &z_args[0], 0, 1);
+    } else {
+        zval_dtor(&z_args[0]);
+        if (++i < ra->count) {
+            add_index_long(z_iter, 0, i);
+            add_index_null(z_iter, 1);
+        } else {
+            zend_hash_clean(Z_ARRVAL_P(z_iter));
+        }
+    }
+}
+
 PHP_METHOD(RedisArray, multi)
 {
     zval *object;
